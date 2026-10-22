@@ -1,65 +1,85 @@
 ```C#
 using UnityEngine;
+using UnityEngine.InputSystem;
 
-public class TowerBuilder : MonoBehaviour
+[RequireComponent(typeof(LineRenderer))]
+public class Launcher : MonoBehaviour
 {
-    [SerializeField, Tooltip("Materiał kolejnych pięter (cyklicznie)")]
-    private Block[] floorPrefabs;
-    [SerializeField] private Target targetPrefab;
+    [SerializeField] private Rigidbody projectilePrefab;
+    [SerializeField, Tooltip("Punkt wylotu - dziecko wyrzutni")]
+    private Transform muzzle;
 
-    [SerializeField, Range(1, 8)] private int floors = 3;
-    [SerializeField, Range(1f, 4f)] private float span = 2f;   // rozstaw osi filarów [m]
-    [SerializeField] private Vector3 pillarSize = new Vector3(0.3f, 1.5f, 1f);
-    [SerializeField, Range(0.1f, 0.6f)] private float beamHeight = 0.3f;
+    [Header("Celowanie")]
+    [SerializeField, Range(0f, 80f)] private float pitch = 20f;      // kąt w pionie [°]
+    [SerializeField, Range(-45f, 45f)] private float yaw = 0f;       // kąt w poziomie [°]
+    [SerializeField, Range(1f, 300f)] private float impulse = 40f;   // [N·s]
+    [SerializeField] private float aimSpeed = 30f;                   // [°/s]
+    [SerializeField] private float powerSpeed = 20f;                 // [N·s na sekundę]
 
-    void Start() => Build();
+    [Header("Strzały")]
+    [SerializeField, Range(1, 20)] private int maxShots = 3;
+    [SerializeField] private float projectileLifetime = 15f;
 
-    [ContextMenu("Przebuduj wieżę")]
-    public void Build()
+    [Header("Trajektoria")]
+    [SerializeField, Range(10, 100)] private int trajectoryPoints = 40;
+    [SerializeField] private float trajectoryStep = 0.05f;           // [s] między punktami
+
+    private LineRenderer line;
+
+    public int ShotsLeft { get; private set; }
+    public Rigidbody LastProjectile { get; private set; }
+
+    void Awake() => line = GetComponent<LineRenderer>();
+
+    void Start() => ResetShots();
+
+    void Update()
     {
-        Clear();
-        float y = 0f;   // wysokość podłogi bieżącego piętra (lokalnie)
+        Keyboard kb = Keyboard.current;
+        if (kb == null) return;
 
-        for (int i = 0; i < floors; i++)
-        {
-            Block prefab = floorPrefabs[i % floorPrefabs.Length];
+        // TODO 4: strzałki ←/→ zmieniają yaw, ↑/↓ zmieniają pitch (aimSpeed · Time.deltaTime),
+        //         klawisze W/S zmieniają impulse (powerSpeed · Time.deltaTime).
+        //         Ogranicz wartości do zakresów z [Range] (Mathf.Clamp).
+        //         Podpowiedź: kb.leftArrowKey.isPressed
 
-            // filary
-            float py = y + pillarSize.y / 2f;
-            SpawnBlock(prefab, new Vector3(-span / 2f, py, 0f), pillarSize, $"P{i}_Filar_L");
-            SpawnBlock(prefab, new Vector3(span / 2f, py, 0f), pillarSize, $"P{i}_Filar_P");
+        
 
-            // TODO 3: postaw cel (targetPrefab) na środku piętra, tak aby LEŻAŁ na podłodze piętra.
-            //         Nazwij go $"P{i}_Cel". Promień kulki = połowa jej skali.
+        transform.rotation = Quaternion.Euler(-pitch, yaw, 0f);   // minus: dodatni kąt wokół X pochyla w dół
+        DrawTrajectory();
 
-            // belka (strop) na filarach
-
-            SpawnBlock(targetPrefab, new Vector3(span / 1f, py, 0f), pillarSize, $"P{i}_Cel");
-
-            y += pillarSize.y;
-            Vector3 beamSize = new Vector3(span + pillarSize.x, beamHeight, pillarSize.z);
-            SpawnBlock(prefab, new Vector3(0f, y + beamHeight / 2f, 0f), beamSize, $"P{i}_Belka");
-            y += beamHeight;
-        }
+        if (kb.spaceKey.wasPressedThisFrame) Fire();
     }
 
-    private void SpawnBlock(Block prefab, Vector3 localPos, Vector3 size, string blockName)
+    [ContextMenu("TEST / Strzał")]
+    public void Fire()
     {
-        Block b = Instantiate(prefab, transform);
-        b.name = blockName;
-        b.transform.localPosition = localPos;
-        b.transform.localRotation = Quaternion.identity;
-        b.transform.localScale = size;
-        b.UpdateMass();   // Awake() policzył masę jeszcze dla skali 1×1×1!
+        if (ShotsLeft <= 0) { Debug.Log("Brak strzałów"); return; }
+        ShotsLeft--;
+
+        Rigidbody p = Instantiate(projectilePrefab, muzzle.position, muzzle.rotation);
+        // TODO 5: nadaj pociskowi impuls o wartości impulse wzdłuż muzzle.forward
+        Destroy(p.gameObject, projectileLifetime);
+        LastProjectile = p;
+
+        Debug.Log($"Strzał: J = {impulse:0} N·s, v0 = {impulse / p.mass:0.0} m/s, zostało {ShotsLeft}");
     }
 
-    private void Clear()
+    public void ResetShots() => ShotsLeft = maxShots;
+
+    private void DrawTrajectory()
     {
-        for (int i = transform.childCount - 1; i >= 0; i--)
+        Vector3 p0 = muzzle.position;
+        Vector3 v0 = muzzle.forward * (impulse / projectilePrefab.mass);   // Δv = J / m
+        Vector3 g = Physics.gravity;
+
+        line.positionCount = trajectoryPoints;
+        for (int i = 0; i < trajectoryPoints; i++)
         {
-            GameObject child = transform.GetChild(i).gameObject;
-            child.SetActive(false);   // Destroy działa dopiero na końcu klatki
-            Destroy(child);
+            float t = i * trajectoryStep;
+            // TODO 6: położenie w rzucie ukośnym: p(t) = p0 + v0·t + ½·g·t²
+            Vector3 p = p0;
+            line.SetPosition(i, p);
         }
     }
 }
