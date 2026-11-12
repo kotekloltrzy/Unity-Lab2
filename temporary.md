@@ -1,63 +1,87 @@
 ```C#
-using System.Collections;
 using UnityEngine;
+using UnityEngine.UIElements;
+using System;
+using System.Collections.Generic;
 
-public class LevelJudge : MonoBehaviour
+public class PositionDetector : MonoBehaviour
 {
-    [SerializeField] private Launcher launcher;
-    [SerializeField] private TowerBuilder tower;
-    [SerializeField, Tooltip("Maks. czas czekania na uspokojenie sceny [s]")]
-    private float maxWait = 10f;
+    public GameObject head;
+    public GameObject handR;
+    public GameObject handL;
+    private float logTimer = 0f;
+    private float logInterval = 1f;
+    public static PositionDetector Instance { get; private set; }
 
-    private bool judging;
 
-    // GetComponentsInChildren pomija obiekty nieaktywne (patrz TowerBuilder.Clear)
-    public int TargetsLeft => tower.GetComponentsInChildren<Target>().Length;
+    [Header("Tracked Position")]
+    [SerializeField] private Vector3 headPosition;
+    [SerializeField] private Vector3 handRPosition;
+    [SerializeField] private Vector3 handLPosition;
 
-    void Update()
+    [SerializeField] private float positionThreshold = 0.01f;
+
+    public event Action OnPositionChanged;
+
+    private void Start()
     {
-        if (judging) return;
-        if (TargetsLeft == 0 || launcher.ShotsLeft == 0)
-            StartCoroutine(Judge());
+        SaveCurrentPosition();
     }
 
-    private IEnumerator Judge()
+    private void Awake()
     {
-        judging = true;
-        Debug.Log("Czekam, aż scena się uspokoi...");
+        if (Instance != null && Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
 
-        float t = 0f;
-        // TODO 7: czekaj klatka po klatce (yield return null), dopóki scena nie śpi
-        //         i nie minęło maxWait sekund
-        yield return null;
-
-        int left = TargetsLeft;
-        if (left == 0)
-            Debug.Log($"<color=yellow>WYGRANA! Gwiazdki: {1 + launcher.ShotsLeft}</color>");
-        else
-            Debug.Log($"<color=red>PRZEGRANA - zostało celów: {left}</color>");
+        Instance = this;
     }
 
-    private bool SceneAsleep()
+    private void Update()
     {
-        foreach (Rigidbody rb in tower.GetComponentsInChildren<Rigidbody>())
-            if (!rb.IsSleeping()) return false;
-
-        // TODO 8: sprawdź też ostatni pocisk - uwaga, launcher.LastProjectile może być null
-        //         (jeszcze nie strzelano albo pocisk został już zniszczony)
-        return true;
+        if (head != null)
+        {
+            headPosition = head.transform.position;
+        }
+        if (handR != null)
+        {
+            handRPosition = handR.transform.position;
+        }
+        if (handL != null)
+        {
+            handLPosition = handL.transform.position;
+        }
+        
     }
 
-    [ContextMenu("TEST / Czy scena śpi?")]
-    private void TestAsleep() => Debug.Log($"Scena śpi: {SceneAsleep()}, celów: {TargetsLeft}");
-
-    [ContextMenu("TEST / Nowa runda")]
-    private void NewRound()
+    public UnityEngine.Vector3 GetHeadData()
     {
-        StopAllCoroutines();
-        judging = false;
-        tower.Build();
-        launcher.ResetShots();
+        return headPosition;
+    }
+
+    public UnityEngine.Vector3 GetHandLData()
+    {
+        return handLPosition;
+    }
+
+    public UnityEngine.Vector3 GetHandRData()
+    {
+        return handRPosition;
+    }
+
+    private bool HasPositionChanged()
+    {
+        return Vector3.Distance(headPosition, lastHeadPosition) > positionThreshold || Vector3.Distance(handLPosition, lastHandLPosition) > positionThreshold || Vector3.Distance(handRPosition, lastHandRPosition) > positionThreshold
+    }
+
+    private void SaveCurrentPositions()
+    {
+        lastHeadPosition = headPosition;
+        lastHandLPosition = handLPosition;
+        lastHandRPosition = handRPosition;
     }
 }
+
 ```
